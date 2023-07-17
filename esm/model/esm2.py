@@ -6,12 +6,15 @@
 from typing import Union
 import torch
 import torch.nn as nn
+import loralib as lora
+import random
 
-import esm
-from esm.modules import ContactPredictionHead, ESM1bLayerNorm, RobertaLMHead, TransformerLayer
+import esmLoRA.esm as esm
+import pytorch_lightning as pl
+from esmLoRA.esm.modules import ContactPredictionHead, ESM1bLayerNorm, RobertaLMHead, TransformerLayer
+from torch.nn import functional as F
 
-
-class ESM2(nn.Module):
+class ESM2(pl.LightningModule):
     def __init__(
         self,
         num_layers: int = 33,
@@ -143,5 +146,45 @@ class ESM2(nn.Module):
 
         return result
 
+    def cross_entropy_loss(self, logits, labels):
+        return F.nll_loss(logits, labels)
+
+    def training_step(self, batch, batch_nb):
+        # REQUIRED
+        x = batch
+        y = x.clone()
+
+        for i in range(len(y)):
+            # #remove all padding, cls, eos tokens
+            mask_arr = (y[i] != self.padding_idx) * (y[i] != self.cls_idx) * (y[i] != self.eos_idx)
+            short_seq = y[i][mask_arr]
+            masking_index = random.sample(range(len(short_seq)), int(0.15*len(short_seq)))
+            # add one value for each index to accoutnt for BOS token in original sequence
+            masking_index = [i + 1 for i in masking_index]
+            y[i][masking_index] = self.mask_idx
+
+        y_hat = self(x)
+        y = self(y)
+        loss = F.cross_entropy(y_hat, y)
+        tensorboard_logs = {'train_loss': loss}
+        return {'loss': loss, 'log': tensorboard_logs}
+
+    # def training_step(self, train_batch, batch_idx):
+    #     x, y = train_batch
+    #     logits = self.forward(x)
+    #     loss = self.cross_entropy_loss(logits, y)
+    #     self.log('train_loss', loss)
+    #     return loss
+
+    def validation_step(self, val_batch, batch_idx):
+        x, y = val_batch
+        logits = self.forward(x)
+        loss = self.cross_entropy_loss(logits, y)
+        self.log('val_loss', loss)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+            
     def predict_contacts(self, tokens):
         return self(tokens, return_contacts=True)["contacts"]

@@ -6,6 +6,7 @@
 import math
 from typing import Optional
 
+import loralib as lora
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -112,8 +113,8 @@ class TransformerLayer(nn.Module):
         )
         self.self_attn_layer_norm = BertLayerNorm(self.embed_dim)
 
-        self.fc1 = nn.Linear(self.embed_dim, self.ffn_embed_dim)
-        self.fc2 = nn.Linear(self.ffn_embed_dim, self.embed_dim)
+        self.fc1 = lora.Linear(self.embed_dim, self.ffn_embed_dim, r = 16)
+        self.fc2 = lora.Linear(self.ffn_embed_dim, self.embed_dim, r = 16)
 
         self.final_layer_norm = BertLayerNorm(self.embed_dim)
 
@@ -408,8 +409,8 @@ class FeedForwardNetwork(nn.Module):
         self.activation_dropout_module = nn.Dropout(
             activation_dropout,
         )
-        self.fc1 = nn.Linear(embedding_dim, ffn_embedding_dim)
-        self.fc2 = nn.Linear(ffn_embedding_dim, embedding_dim)
+        self.fc1 = lora.Linear(embedding_dim, ffn_embedding_dim, r = 16)
+        self.fc2 = lora.Linear(ffn_embedding_dim, embedding_dim, r = 16)
 
     def forward(self, x):
         x = self.activation_fn(self.fc1(x))
